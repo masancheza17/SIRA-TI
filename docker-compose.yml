@@ -1,0 +1,56 @@
+version: "3.9"
+
+# Orquestación de SIRA TI: base de datos PostgreSQL, backend Django
+# y frontend React. Nginx se agregará como proxy inverso cuando el
+# proyecto pase a una configuración de producción (ver FASE 11).
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: sira_ti_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-sira_ti}
+      POSTGRES_USER: ${POSTGRES_USER:-sira_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-sira_password}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-sira_user} -d ${POSTGRES_DB:-sira_ti}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+    container_name: sira_ti_backend
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+    ports:
+      - "8000:8000"
+
+  frontend:
+    build:
+      context: ./frontend
+    container_name: sira_ti_frontend
+    restart: unless-stopped
+    env_file:
+      - ./frontend/.env
+    depends_on:
+      - backend
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    ports:
+      - "5173:5173"
+
+volumes:
+  postgres_data:
