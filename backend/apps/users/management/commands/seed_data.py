@@ -9,18 +9,8 @@ ticket de ejemplo con un comentario.
 
 Uso:
     python manage.py seed_data
-
-Contraseñas de los usuarios de prueba:
-- En desarrollo (DEBUG=True) se usan las contraseñas demo documentadas en el README.
-- Con DEBUG=False se generan al azar y se muestran UNA sola vez al terminar,
-  para no dejar credenciales públicas en un servidor real. También puedes fijarlas
-  con SEED_ADMIN_PASSWORD, SEED_TECH_PASSWORD y SEED_CLIENT_PASSWORD.
 """
-import os
-import secrets
 from datetime import date
-
-from django.conf import settings
 
 from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand
@@ -35,35 +25,12 @@ from apps.users.models import Role
 
 User = get_user_model()
 
-DEMO_PASSWORDS = {
-    "admin": "Admin123*",
-    "tecnico1": "Tecnico123*",
-    "cliente1": "Cliente123*",
-}
-ENV_VARS = {
-    "admin": "SEED_ADMIN_PASSWORD",
-    "tecnico1": "SEED_TECH_PASSWORD",
-    "cliente1": "SEED_CLIENT_PASSWORD",
-}
-
 
 class Command(BaseCommand):
     help = "Crea datos iniciales de SIRA TI (roles, catálogos, SLA, usuarios de prueba y un ticket demo)."
 
-    def _password_for(self, username):
-        """Contraseña del usuario de prueba: variable de entorno, demo (DEBUG) o aleatoria."""
-        password = os.environ.get(ENV_VARS[username])
-        if password:
-            return password
-        if settings.DEBUG:
-            return DEMO_PASSWORDS[username]
-        password = secrets.token_urlsafe(12) + "aA1*"
-        self.generated_passwords[username] = password
-        return password
-
     @transaction.atomic
     def handle(self, *args, **options):
-        self.generated_passwords = {}
         self.stdout.write("Creando datos iniciales de SIRA TI...")
 
         # --- Roles ---------------------------------------------------
@@ -90,7 +57,7 @@ class Command(BaseCommand):
             },
         )
         if created:
-            admin_user.set_password(self._password_for("admin"))
+            admin_user.set_password("Admin123*")
             admin_user.save()
 
         tech_user, created = User.objects.get_or_create(
@@ -103,7 +70,7 @@ class Command(BaseCommand):
             },
         )
         if created:
-            tech_user.set_password(self._password_for("tecnico1"))
+            tech_user.set_password("Tecnico123*")
             tech_user.save()
 
         client_user, created = User.objects.get_or_create(
@@ -116,7 +83,7 @@ class Command(BaseCommand):
             },
         )
         if created:
-            client_user.set_password(self._password_for("cliente1"))
+            client_user.set_password("Cliente123*")
             client_user.save()
 
         # --- Catálogos de tickets --------------------------------------
@@ -227,13 +194,7 @@ class Command(BaseCommand):
             )
 
         self.stdout.write(self.style.SUCCESS("Datos iniciales creados correctamente."))
-        if settings.DEBUG:
-            self.stdout.write("Usuarios de prueba (solo desarrollo):")
-            for username, password in DEMO_PASSWORDS.items():
-                self.stdout.write(f"  {username:<9} / {password}")
-        elif self.generated_passwords:
-            self.stdout.write(self.style.WARNING("Contraseñas generadas (guárdalas ahora, no se vuelven a mostrar):"))
-            for username, password in self.generated_passwords.items():
-                self.stdout.write(f"  {username:<9} / {password}")
-        else:
-            self.stdout.write("Usuarios de prueba creados con las contraseñas definidas en el entorno.")
+        self.stdout.write("Usuarios de prueba:")
+        self.stdout.write("  admin     / Admin123*    (Administrador)")
+        self.stdout.write("  tecnico1  / Tecnico123*  (Técnico)")
+        self.stdout.write("  cliente1  / Cliente123*  (Cliente)")

@@ -9,16 +9,12 @@ from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
-from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
-from rest_framework_simplejwt.exceptions import TokenError
-from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenObtainPairView
 
 from .permissions import IsAdmin
 from .serializers import (
     ChangePasswordSerializer,
-    LogoutSerializer,
     PasswordResetConfirmSerializer,
     PasswordResetRequestSerializer,
     RoleAwareTokenObtainPairSerializer,
@@ -33,31 +29,6 @@ class RoleAwareTokenObtainPairView(TokenObtainPairView):
     """Login (POST /api/auth/login/). Devuelve tokens JWT + rol del usuario."""
 
     serializer_class = RoleAwareTokenObtainPairSerializer
-    # Límite de intentos por IP contra fuerza bruta (ver DEFAULT_THROTTLE_RATES).
-    throttle_classes = [ScopedRateThrottle]
-    throttle_scope = "login"
-
-
-class LogoutView(APIView):
-    """
-    Cierre de sesión (POST /api/auth/logout/ con {"refresh": "<token>"}).
-
-    Mete el refresh token en la blacklist para que no se pueda volver a usar,
-    aunque alguien lo haya copiado. No exige access token válido: quien cierra
-    sesión puede tener el access vencido, y para invalidar un refresh hay que
-    conocerlo de todas formas.
-    """
-
-    permission_classes = [AllowAny]
-
-    def post(self, request):
-        serializer = LogoutSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        try:
-            RefreshToken(serializer.validated_data["refresh"]).blacklist()
-        except TokenError:
-            return Response({"detail": "Token inválido o ya expirado."}, status=status.HTTP_400_BAD_REQUEST)
-        return Response({"detail": "Sesión cerrada correctamente."}, status=status.HTTP_200_OK)
 
 
 class UserViewSet(viewsets.ModelViewSet):
@@ -116,8 +87,6 @@ class PasswordResetRequestView(APIView):
     """
 
     permission_classes = [AllowAny]
-    throttle_classes = [ScopedRateThrottle]
-    throttle_scope = "password_reset"
 
     def post(self, request):
         serializer = PasswordResetRequestSerializer(data=request.data)
@@ -146,8 +115,6 @@ class PasswordResetConfirmView(APIView):
     """Paso 2 de recuperación de contraseña (POST /api/auth/password-reset/confirm/)."""
 
     permission_classes = [AllowAny]
-    throttle_classes = [ScopedRateThrottle]
-    throttle_scope = "password_reset"
 
     def post(self, request):
         serializer = PasswordResetConfirmSerializer(data=request.data)

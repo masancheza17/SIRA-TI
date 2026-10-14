@@ -1,8 +1,6 @@
 """Serializers del módulo de Tickets."""
 from rest_framework import serializers
 
-from apps.users.models import Role
-
 from .models import Category, Comment, Priority, Status, Ticket, TicketAttachment, TicketHistory
 
 
@@ -105,7 +103,7 @@ class TicketDetailSerializer(serializers.ModelSerializer):
     ticket_type_name = serializers.CharField(source="get_ticket_type_display", read_only=True)
     sla_compliance = serializers.SerializerMethodField()
     attachments = TicketAttachmentSerializer(many=True, read_only=True)
-    comments = serializers.SerializerMethodField()
+    comments = CommentSerializer(many=True, read_only=True)
     history = TicketHistorySerializer(many=True, read_only=True)
 
     class Meta:
@@ -129,18 +127,6 @@ class TicketDetailSerializer(serializers.ModelSerializer):
 
     def get_sla_compliance(self, obj):
         return obj.sla_compliance()
-
-    def get_comments(self, obj):
-        """
-        Los comentarios internos solo los ve el personal (Admin/Técnico). Si el
-        serializer se usa sin `request` en el contexto, por seguridad se ocultan.
-        """
-        request = self.context.get("request")
-        role = getattr(getattr(request, "user", None), "role_name", None)
-        comments = obj.comments.all()  # usa el prefetch de la vista
-        if role not in (Role.ADMIN, Role.TECHNICIAN):
-            comments = [c for c in comments if not c.is_internal]
-        return CommentSerializer(comments, many=True).data
 
 
 class TicketCreateSerializer(serializers.ModelSerializer):
