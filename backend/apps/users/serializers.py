@@ -84,3 +84,7 @@ class PasswordResetConfirmSerializer(serializers.Serializer):
     uid = serializers.CharField()
     token = serializers.CharField()
     new_password = serializers.CharField(write_only=True, validators=[validate_password])
+
+
+class LogoutSerializer(serializers.Serializer):
+    refresh = serializers.CharField()

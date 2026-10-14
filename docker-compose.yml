@@ -1,23 +1,22 @@
-version: "3.9"
-
-# Orquestación de SIRA TI: base de datos PostgreSQL, backend Django
-# y frontend React. Nginx se agregará como proxy inverso cuando el
-# proyecto pase a una configuración de producción (ver FASE 11).
+# Orquestación de SIRA TI para DESARROLLO LOCAL: base de datos PostgreSQL,
+# backend Django (con recarga automática) y frontend React (Vite).
+# Para producción no uses este archivo tal cual: ver "Despliegue" en el README.
 services:
   db:
     image: postgres:16-alpine
     container_name: sira_ti_db
     restart: unless-stopped
-    environment:
-      POSTGRES_DB: ${POSTGRES_DB:-sira_ti}
-      POSTGRES_USER: ${POSTGRES_USER:-sira_user}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-sira_password}
+    # Lee POSTGRES_DB / POSTGRES_USER / POSTGRES_PASSWORD del mismo archivo que el
+    # backend, para que la contraseña de la base y la que usa Django siempre coincidan.
+    env_file:
+      - ./backend/.env
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:
-      - "5432:5432"
+      # Solo accesible desde tu propio equipo (antes quedaba abierto a toda la red).
+      - "127.0.0.1:5432:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-sira_user} -d ${POSTGRES_DB:-sira_ti}"]
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -29,6 +28,8 @@ services:
     restart: unless-stopped
     env_file:
       - ./backend/.env
+    # Desarrollo: servidor con recarga automática (la imagen usa gunicorn por defecto).
+    command: python manage.py runserver 0.0.0.0:8000
     depends_on:
       db:
         condition: service_healthy
