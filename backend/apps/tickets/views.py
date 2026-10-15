@@ -10,6 +10,7 @@ from rest_framework.response import Response
 
 from apps.technicians.models import Technician
 from apps.users.models import Role
+from apps.users.permissions import IsAdmin, IsAdminOrReadOnly, IsAdminOrTechnician
 
 from . import services
 from .attachments import AttachmentError
@@ -29,19 +30,19 @@ from .serializers import (
 class CategoryViewSet(viewsets.ModelViewSet):
     queryset = Category.objects.all()
     serializer_class = CategorySerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAdminOrReadOnly]
 
 
 class PriorityViewSet(viewsets.ModelViewSet):
     queryset = Priority.objects.all()
     serializer_class = PrioritySerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAdminOrReadOnly]
 
 
 class StatusViewSet(viewsets.ModelViewSet):
     queryset = Status.objects.all()
     serializer_class = StatusSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAdminOrReadOnly]
 
 
 class TicketViewSet(viewsets.ModelViewSet):
@@ -60,6 +61,18 @@ class TicketViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
     filterset_fields = ["status", "priority", "category", "technician", "client", "ticket_type"]
     search_fields = ["subject", "description"]
+
+    def get_permissions(self):
+        # Editar o borrar un ticket directamente (PUT/PATCH/DELETE) se salta las
+        # validaciones por rol y el historial de auditoría de las acciones
+        # dedicadas (assign, change_status, ...). Solo el Administrador puede.
+        if self.action in ("update", "partial_update", "destroy"):
+            return [IsAdmin()]
+        # Cambiar el estado o cerrar con solución es trabajo del personal interno:
+        # un cliente podría marcar su propio ticket como resuelto y falsear el SLA.
+        if self.action in ("change_status", "close"):
+            return [IsAdminOrTechnician()]
+        return super().get_permissions()
 
     def get_serializer_class(self):
         if self.action == "list":
@@ -111,7 +124,7 @@ class TicketViewSet(viewsets.ModelViewSet):
             raise ValidationError({"technician": "Técnico no válido."})
 
         ticket = services.assign_technician(ticket, technician, request.user)
-        return Response(TicketDetailSerializer(ticket).data)
+        return Response(TicketDetailSerializer(ticket, context={"request": request}).data)
 
     @action(detail=True, methods=["post"])
     def change_status(self, request, pk=None):
@@ -124,7 +137,7 @@ class TicketViewSet(viewsets.ModelViewSet):
             raise ValidationError({"status": "Estado no válido."})
 
         ticket = services.change_status(ticket, new_status, request.user)
-        return Response(TicketDetailSerializer(ticket).data)
+        return Response(TicketDetailSerializer(ticket, context={"request": request}).data)
 
     @action(detail=True, methods=["post"])
     def change_priority(self, request, pk=None):
@@ -140,7 +153,7 @@ class TicketViewSet(viewsets.ModelViewSet):
             raise ValidationError({"priority": "Prioridad no válida."})
 
         ticket = services.change_priority(ticket, new_priority, request.user)
-        return Response(TicketDetailSerializer(ticket).data)
+        return Response(TicketDetailSerializer(ticket, context={"request": request}).data)
 
     @action(detail=True, methods=["post"])
     def change_type(self, request, pk=None):
@@ -158,7 +171,7 @@ class TicketViewSet(viewsets.ModelViewSet):
         # `history`, y el objeto original quedaría con el historial anterior
         # al cambio recién registrado.
         ticket = self.get_queryset().get(pk=ticket.pk)
-        return Response(TicketDetailSerializer(ticket).data)
+        return Response(TicketDetailSerializer(ticket, context={"request": request}).data)
 
     @action(detail=True, methods=["get", "post"], parser_classes=[MultiPartParser, FormParser])
     def attachments(self, request, pk=None):
@@ -220,18 +233,27 @@ class TicketViewSet(viewsets.ModelViewSet):
         ticket = self.get_object()
 
         if request.method == "GET":
-            serializer = CommentSerializer(ticket.comments.all(), many=True)
+            comments = ticket.comments.all()
+            # Los comentarios internos son solo para el personal: se filtran aquí,
+            # en el backend, no solo en la interfaz.
+            if request.user.role_name not in (Role.ADMIN, Role.TECHNICIAN):
+                comments = comments.filter(is_internal=False)
+            serializer = CommentSerializer(comments, many=True)
             return Response(serializer.data)
 
+        content = str(request.data.get("content", "")).strip()
+        if not content:
+            raise ValidationError({"content": "El comentario no puede estar vacío."})
+
         # Un cliente nunca puede crear comentarios internos.
-        is_internal = request.data.get("is_internal", False)
+        is_internal = str(request.data.get("is_internal", False)).lower() in ("true", "1")
         if request.user.role_name == Role.CLIENT:
             is_internal = False
 
         comment = Comment.objects.create(
             ticket=ticket,
             author=request.user,
-            content=request.data.get("content", ""),
+            content=content,
             is_internal=is_internal,
         )
         return Response(CommentSerializer(comment).data, status=http_status.HTTP_201_CREATED)
@@ -246,4 +268,4 @@ class TicketViewSet(viewsets.ModelViewSet):
             ticket.solution = solution
             ticket.save(update_fields=["solution"])
         ticket = services.change_status(ticket, closed_status, request.user)
-        return Response(TicketDetailSerializer(ticket).data)
+        return Response(TicketDetailSerializer(ticket, context={"request": request}).data)

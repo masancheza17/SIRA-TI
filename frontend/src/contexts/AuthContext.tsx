@@ -1,3 +1,4 @@
+import axios from "axios"
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 
 import api, { tokenStorage } from "@/services/api";
@@ -56,6 +57,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const logout = () => {
+    // Invalida el refresh token en el servidor para que no pueda reutilizarse.
+    // Se usa axios "plano" (sin el token de acceso, que puede estar vencido) y no se
+    // espera la respuesta: la sesión local se cierra siempre, falle o no la red.
+    const refresh = tokenStorage.getRefresh();
+    if (refresh) {
+      axios.post(`${api.defaults.baseURL}/auth/logout/`, { refresh }).catch(() => undefined);
+    }
     tokenStorage.clear();
     setUser(null);
   };

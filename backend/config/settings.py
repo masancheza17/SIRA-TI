@@ -6,18 +6,39 @@ la conexión a PostgreSQL. Todos los valores sensibles se leen desde
 variables de entorno (ver .env.example) para no exponer credenciales
 en el código fuente.
 """
+import sys
 from datetime import timedelta
 from pathlib import Path
 
 from decouple import Csv, config
+from django.core.exceptions import ImproperlyConfigured
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 # ---------------------------------------------------------------------------
 # Seguridad básica
 # ---------------------------------------------------------------------------
-SECRET_KEY = config("SECRET_KEY", default="dev-only-insecure-key")
 DEBUG = config("DEBUG", default=False, cast=bool)
+
+# Clave por defecto, válida SOLO en desarrollo (DEBUG=True). Con DEBUG=False
+# la aplicación se niega a arrancar si no se define una clave propia, para que
+# nunca llegue a producción con una clave pública (esta está en el repositorio).
+_INSECURE_SECRET_KEYS = {
+    "dev-only-insecure-key",
+    "cambia-esto-por-una-clave-larga-y-secreta",
+}
+SECRET_KEY = config("SECRET_KEY", default="dev-only-insecure-key")
+if not DEBUG and (SECRET_KEY in _INSECURE_SECRET_KEYS or len(SECRET_KEY) < 32):
+    raise ImproperlyConfigured(
+        "SECRET_KEY no es segura. Con DEBUG=False debes definir una SECRET_KEY propia "
+        "de al menos 32 caracteres. Puedes generar una con: "
+        'python -c "from django.core.management.utils import get_random_secret_key; '
+        'print(get_random_secret_key())"'
+    )
+
+# True cuando se ejecuta `python manage.py test` (se usa para relajar el rate limiting).
+TESTING = "test" in sys.argv
+
 ALLOWED_HOSTS = config("ALLOWED_HOSTS", default="localhost,127.0.0.1", cast=Csv())
 
 # ---------------------------------------------------------------------------
@@ -35,6 +56,7 @@ DJANGO_APPS = [
 THIRD_PARTY_APPS = [
     "rest_framework",
     "rest_framework_simplejwt",
+    "rest_framework_simplejwt.token_blacklist",  # necesario para invalidar refresh tokens
     "corsheaders",
     "django_filters",
 ]
@@ -162,6 +184,21 @@ REST_FRAMEWORK = {
     ),
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
     "PAGE_SIZE": 10,
+    # Límite de intentos por IP en login y recuperación de contraseña (fuerza bruta).
+    # Cada vista declara su `throttle_scope`; las tasas se pueden ajustar por .env.
+    # Nota: el contador vive en la caché del proceso (LocMem). Con varios workers de
+    # gunicorn cada uno cuenta por separado; para un límite global usar Redis/BD.
+    "DEFAULT_THROTTLE_RATES": {
+        "login": "1000/min" if TESTING else config("LOGIN_THROTTLE_RATE", default="10/min"),
+        "password_reset": (
+            "1000/min" if TESTING else config("PASSWORD_RESET_THROTTLE_RATE", default="10/hour")
+        ),
+    },
+    # Detrás de un proxy (Render, Nginx) define NUM_PROXIES=1 para que el límite use la
+    # IP real del cliente (X-Forwarded-For) y no la del proxy.
+    "NUM_PROXIES": config(
+        "NUM_PROXIES", default=None, cast=lambda v: int(v) if v not in (None, "") else None
+    ),
 }
 
 # ---------------------------------------------------------------------------
@@ -200,3 +237,19 @@ DEFAULT_FROM_EMAIL = config("DEFAULT_FROM_EMAIL", default="no-reply@sira-ti.loca
 EMAIL_BACKEND = config(
     "EMAIL_BACKEND", default="django.core.mail.backends.console.EmailBackend"
 )
+
+# ---------------------------------------------------------------------------
+# HTTPS en producción
+# ---------------------------------------------------------------------------
+# Actívalo con USE_HTTPS=True cuando el sitio se sirva por HTTPS (Render ya lo hace).
+# Se deja apagado por defecto para no romper el desarrollo local por http://.
+USE_HTTPS = config("USE_HTTPS", default=False, cast=bool)
+if USE_HTTPS:
+    # Render termina el TLS en su proxy y reenvía este encabezado a la app.
+    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+    SECURE_SSL_REDIRECT = True
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    # HSTS empieza corto (1 hora) a propósito: subirlo a un año (31536000) solo cuando
+    # estés seguro de que todo funciona por HTTPS, porque el navegador lo recuerda.
+    SECURE_HSTS_SECONDS = config("SECURE_HSTS_SECONDS", default=3600, cast=int)

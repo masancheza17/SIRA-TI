@@ -69,7 +69,13 @@ api.interceptors.response.use(
         `${api.defaults.baseURL}/auth/refresh/`,
         { refresh }
       );
-      tokenStorage.setAccess(data.access);
+      // El backend rota el refresh token en cada renovación (y invalida el anterior):
+      // hay que guardar el nuevo, o la siguiente renovación fallaría.
+      if (data.refresh) {
+        tokenStorage.setTokens(data.access, data.refresh);
+      } else {
+        tokenStorage.setAccess(data.access);
+      }
       pendingRequests.forEach((cb) => cb());
       pendingRequests = [];
       return api(originalRequest);
