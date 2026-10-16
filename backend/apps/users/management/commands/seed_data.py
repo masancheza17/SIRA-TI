@@ -70,7 +70,7 @@ class Command(BaseCommand):
             },
         )
         if created:
-            tech_user.set_password("Tecnico123*")
+            tech_user.set_password()
             tech_user.save()
 
         client_user, created = User.objects.get_or_create(
