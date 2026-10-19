@@ -66,7 +66,7 @@ export function AuthLayout({
 
         <div className="relative max-w-sm">
           <h2 className="text-3xl font-semibold leading-tight">
-            Mesa de servicio TI, sin fricción.
+            Mesa de servicio TI.
           </h2>
           <p className="mt-3 text-sm leading-relaxed text-sira-soft">
             SIRA TI centraliza clientes, técnicos, tickets y SLA para que tu
