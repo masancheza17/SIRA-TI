@@ -2,9 +2,7 @@
 Configuración principal del proyecto SIRA TI.
 
 Este archivo centraliza la configuración de Django, DRF, JWT, CORS y
-la conexión a PostgreSQL. Todos los valores sensibles se leen desde
-variables de entorno (ver .env.example) para no exponer credenciales
-en el código fuente.
+la conexión a PostgreSQL..
 """
 import sys
 from datetime import timedelta
